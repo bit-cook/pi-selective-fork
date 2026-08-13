@@ -331,6 +331,18 @@ export class ModelRuntime implements Models {
 		return this.snapshot.available;
 	}
 
+	getVisible(): readonly Model<Api>[] {
+		return this.snapshot.all.filter(
+			(model) =>
+				this.snapshot.configuredProviders.has(model.provider) ||
+				this.config.getProvider(model.provider)?.models?.some((declared) => declared.id === model.id),
+		);
+	}
+
+	getVisibleSnapshot(): readonly Model<Api>[] {
+		return this.getVisible();
+	}
+
 	getError(): string | undefined {
 		const errors: string[] = [];
 		const configError = this.config.getError();

@@ -62,6 +62,7 @@ import {
 } from "../../core/cache-stats.ts";
 import type {
 	AutocompleteProviderFactory,
+	BuiltinModelPanelRuntime,
 	EditorFactory,
 	ExtensionCommandContext,
 	ExtensionContext,
@@ -2584,12 +2585,12 @@ export class InteractiveMode {
 		this.defaultEditor.onCtrlD = () => this.handleCtrlD();
 		this.defaultEditor.onAction("app.suspend", () => this.handleCtrlZ());
 		this.defaultEditor.onAction("app.thinking.cycle", () => this.cycleThinkingLevel());
-		this.defaultEditor.onAction("app.model.cycleForward", () => this.cycleModel("forward"));
-		this.defaultEditor.onAction("app.model.cycleBackward", () => this.cycleModel("backward"));
+		this.defaultEditor.onAction("app.model.cycleForward", () => void this.handleBuiltinModelPanelCycle("forward"));
+		this.defaultEditor.onAction("app.model.cycleBackward", () => void this.handleBuiltinModelPanelCycle("backward"));
 
 		// Global debug handler on TUI (works regardless of focus)
 		this.ui.onDebug = () => this.handleDebugCommand();
-		this.defaultEditor.onAction("app.model.select", () => this.showModelSelector());
+		this.defaultEditor.onAction("app.model.select", () => void this.openBuiltinModelPanel());
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.editor.external", () => void this.handleOpenExternalEditor());
@@ -4309,6 +4310,7 @@ export class InteractiveMode {
 	}
 
 	private async handleModelCommand(searchTerm?: string): Promise<void> {
+		if (await this.openBuiltinModelPanel(searchTerm, "command")) return;
 		if (!searchTerm) {
 			this.showModelSelector();
 			return;
@@ -4330,6 +4332,76 @@ export class InteractiveMode {
 		}
 
 		this.showModelSelector(searchTerm);
+	}
+
+	private createBuiltinModelPanelRuntime(): BuiltinModelPanelRuntime {
+		return {
+			custom: (factory, options) => this.showExtensionCustom(factory, options),
+			getCurrentModel: () => this.session.model,
+			getModels: () => this.session.modelRuntime.getVisibleSnapshot(),
+			getAvailableModels: () => this.session.modelRuntime.getAvailableSnapshot(),
+			getScopedModels: () => this.session.scopedModels,
+			getModel: (ref) => this.session.modelRuntime.getModel(ref.provider, ref.id),
+			hasConfiguredAuth: (provider) => this.session.modelRuntime.hasConfiguredAuth(provider),
+			refreshModels: ({ signal }) => this.session.modelRuntime.refresh({ signal }),
+			getModelError: () => this.session.modelRuntime.getError(),
+			loginProvider: async (provider, { signal }) => {
+				signal.throwIfAborted();
+				await this.handleLoginCommand(provider);
+			},
+			persistDefaultModel: (ref) => this.settingsManager.setDefaultModelAndProvider(ref.provider, ref.id),
+			activateModel: async (model, { signal }) => {
+				signal.throwIfAborted();
+				await this.activateModelFromPanel(model);
+			},
+			cycleModel: async (direction, { signal }) => {
+				signal.throwIfAborted();
+				await this.cycleModel(direction);
+			},
+		};
+	}
+
+	private async openBuiltinModelPanel(
+		query?: string,
+		trigger: "command" | "select-shortcut" = "select-shortcut",
+	): Promise<boolean> {
+		if (!this.session.extensionRunner.getBuiltinModelPanel()) {
+			if (trigger === "select-shortcut") this.showModelSelector(query);
+			return false;
+		}
+		try {
+			await this.session.extensionRunner.invokeBuiltinModelPanelOpen(
+				{ query, trigger },
+				this.createBuiltinModelPanelRuntime(),
+			);
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+		return true;
+	}
+
+	private async handleBuiltinModelPanelCycle(direction: "forward" | "backward"): Promise<void> {
+		if (!this.session.extensionRunner.getBuiltinModelPanel()) {
+			await this.cycleModel(direction);
+			return;
+		}
+		try {
+			await this.session.extensionRunner.invokeBuiltinModelPanelCycle(
+				{ direction, trigger: direction === "forward" ? "cycle-forward" : "cycle-backward" },
+				this.createBuiltinModelPanelRuntime(),
+			);
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	private async activateModelFromPanel(model: Model<any>): Promise<void> {
+		await this.session.setModel(model);
+		this.footer.invalidate();
+		this.updateEditorBorderColor();
+		this.showStatus(`Model: ${model.id}`);
+		void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
+		this.checkDaxnutsEasterEgg(model);
 	}
 
 	private async findExactModelMatch(searchTerm: string): Promise<Model<any> | undefined> {

@@ -8,9 +8,17 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { createExtensionRuntime, discoverAndLoadExtensions, loadExtensions } from "../src/core/extensions/loader.ts";
+import { createEventBus } from "../src/core/event-bus.ts";
+import {
+	createExtensionRuntime,
+	discoverAndLoadExtensions,
+	loadExtensionFromFactory,
+	loadExtensions,
+} from "../src/core/extensions/loader.ts";
 import { ExtensionRunner, emitProjectTrustEvent } from "../src/core/extensions/runner.ts";
 import type {
+	BuiltinModelPanelAdapter,
+	BuiltinModelPanelRuntime,
 	ExtensionActions,
 	ExtensionContextActions,
 	ExtensionUIContext,
@@ -100,6 +108,7 @@ describe("ExtensionRunner", () => {
 		compact: () => {},
 		getSystemPrompt: () => "",
 	};
+	const modelPanelRuntime = {} as BuiltinModelPanelRuntime;
 
 	describe("project_trust", () => {
 		it("continues past undecided handlers and returns the first yes/no decision", async () => {
@@ -480,6 +489,83 @@ describe("ExtensionRunner", () => {
 			expect(diagnostics).toEqual([]);
 			expect(runner.getCommand("shared-cmd:1")?.description).toBe("First command");
 			expect(runner.getCommand("shared-cmd:2")?.description).toBe("Second command");
+		});
+	});
+
+	describe("built-in model panel ownership", () => {
+		it("registers one atomic owner and routes open and cycle requests", async () => {
+			const opened: string[] = [];
+			const cycled: string[] = [];
+			const extension = await loadExtensionFromFactory(
+				(pi) =>
+					pi.registerBuiltinModelPanel({
+						id: "test",
+						open: async (request) => {
+							opened.push(`${request.trigger}:${request.query}`);
+						},
+						cycle: async (request) => {
+							cycled.push(`${request.trigger}:${request.direction}`);
+						},
+					}),
+				tempDir,
+				createEventBus(),
+				createExtensionRuntime(),
+			);
+			const runtime = createExtensionRuntime();
+			const runner = new ExtensionRunner([extension], runtime, tempDir, sessionManager, modelRegistry);
+			expect(
+				await runner.invokeBuiltinModelPanelOpen({ query: "alpha", trigger: "command" }, modelPanelRuntime),
+			).toBe(true);
+			expect(
+				await runner.invokeBuiltinModelPanelCycle(
+					{ direction: "forward", trigger: "cycle-forward" },
+					modelPanelRuntime,
+				),
+			).toBe(true);
+			expect(opened).toEqual(["command:alpha"]);
+			expect(cycled).toEqual(["cycle-forward:forward"]);
+		});
+
+		it("rejects duplicate owners and aborts active invocation on invalidate", async () => {
+			let signal: AbortSignal | undefined;
+			let release: (() => void) | undefined;
+			const adapter: BuiltinModelPanelAdapter = {
+				id: "test",
+				open: (request) => {
+					signal = request.signal;
+					return new Promise<void>((resolve) => {
+						release = resolve;
+					});
+				},
+				cycle: async () => {},
+			};
+			const extensions = await Promise.all(
+				["one", "two"].map((name) =>
+					loadExtensionFromFactory(
+						(pi) => pi.registerBuiltinModelPanel(adapter),
+						tempDir,
+						createEventBus(),
+						createExtensionRuntime(),
+						`<inline:${name}>`,
+					),
+				),
+			);
+			const runner = new ExtensionRunner(
+				[extensions[0]],
+				createExtensionRuntime(),
+				tempDir,
+				sessionManager,
+				modelRegistry,
+			);
+			const running = runner.invokeBuiltinModelPanelOpen({ trigger: "select-shortcut" }, modelPanelRuntime);
+			await new Promise((resolve) => setImmediate(resolve));
+			runner.invalidate();
+			expect(signal?.aborted).toBe(true);
+			release?.();
+			await running;
+			expect(
+				() => new ExtensionRunner(extensions, createExtensionRuntime(), tempDir, sessionManager, modelRegistry),
+			).toThrow(/adapter conflict/);
 		});
 	});
 

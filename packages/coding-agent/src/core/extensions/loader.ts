@@ -32,6 +32,7 @@ import { execCommand } from "../exec.ts";
 import { createSyntheticSourceInfo } from "../source-info.ts";
 import { time } from "../timings.ts";
 import type {
+	BuiltinModelPanelAdapter,
 	EntryRenderer,
 	Extension,
 	ExtensionAPI,
@@ -269,6 +270,17 @@ function createExtensionAPI(
 		): void {
 			runtime.assertActive();
 			extension.shortcuts.set(shortcut, { shortcut, extensionPath: extension.path, ...options });
+		},
+
+		registerBuiltinModelPanel(adapter: BuiltinModelPanelAdapter): void {
+			runtime.assertActive();
+			if (!adapter.id || typeof adapter.open !== "function" || typeof adapter.cycle !== "function") {
+				throw new Error("Invalid built-in model panel adapter");
+			}
+			if (extension.builtinModelPanel) {
+				throw new Error("This extension already registered a built-in model panel adapter");
+			}
+			extension.builtinModelPanel = adapter;
 		},
 
 		registerFlag(

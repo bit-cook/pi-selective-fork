@@ -23,6 +23,7 @@ import type {
 	Context,
 	ImageContent,
 	Model,
+	ModelsRefreshResult,
 	OAuthCredentials,
 	OAuthLoginCallbacks,
 	Provider,
@@ -1165,6 +1166,45 @@ export interface ResolvedCommand extends RegisteredCommand {
 	invocationName: string;
 }
 
+export interface BuiltinModelPanelOpenRequest {
+	query?: string;
+	trigger: "command" | "select-shortcut";
+	signal: AbortSignal;
+}
+
+export interface BuiltinModelPanelCycleRequest {
+	direction: "forward" | "backward";
+	trigger: "cycle-forward" | "cycle-backward";
+	signal: AbortSignal;
+}
+
+export interface BuiltinModelPanelRef {
+	provider: string;
+	id: string;
+}
+
+export interface BuiltinModelPanelRuntime {
+	custom: ExtensionUIContext["custom"];
+	getCurrentModel(): Model<Api> | undefined;
+	getModels(): readonly Model<Api>[];
+	getAvailableModels(): readonly Model<Api>[];
+	getScopedModels(): ReadonlyArray<{ model: Model<Api>; thinkingLevel?: ThinkingLevel }>;
+	getModel(ref: BuiltinModelPanelRef): Model<Api> | undefined;
+	hasConfiguredAuth(provider: string): boolean;
+	refreshModels(options: { signal: AbortSignal }): Promise<ModelsRefreshResult>;
+	getModelError(): string | undefined;
+	loginProvider(provider: string, options: { signal: AbortSignal }): Promise<void>;
+	persistDefaultModel(ref: BuiltinModelPanelRef): void;
+	activateModel(model: Model<Api>, options: { signal: AbortSignal }): Promise<void>;
+	cycleModel(direction: "forward" | "backward", options: { signal: AbortSignal }): Promise<void>;
+}
+
+export interface BuiltinModelPanelAdapter {
+	readonly id: string;
+	open(request: BuiltinModelPanelOpenRequest, runtime: BuiltinModelPanelRuntime): Promise<void>;
+	cycle(request: BuiltinModelPanelCycleRequest, runtime: BuiltinModelPanelRuntime): Promise<void>;
+}
+
 // ============================================================================
 // Extension API
 // ============================================================================
@@ -1248,6 +1288,9 @@ export interface ExtensionAPI {
 			handler: (ctx: ExtensionContext) => Promise<void> | void;
 		},
 	): void;
+
+	/** Atomically replace the built-in model command and model app actions. */
+	registerBuiltinModelPanel(adapter: BuiltinModelPanelAdapter): void;
 
 	/** Register a CLI flag. */
 	registerFlag(
@@ -1672,6 +1715,7 @@ export interface Extension {
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
+	builtinModelPanel?: BuiltinModelPanelAdapter;
 }
 
 /** Result of loading extensions. */

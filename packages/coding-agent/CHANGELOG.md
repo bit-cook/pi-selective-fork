@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added atomic built-in model-panel extension ownership with a restricted runtime facade and fallback-preserving command and keybinding routing.
+
 ## [0.82.1] - 2026-07-25
 
 ### New Features

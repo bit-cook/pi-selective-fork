@@ -40,6 +40,11 @@ export type {
 	BeforeProviderRequestEvent,
 	BeforeProviderRequestEventResult,
 	BuildSystemPromptOptions,
+	BuiltinModelPanelAdapter,
+	BuiltinModelPanelCycleRequest,
+	BuiltinModelPanelOpenRequest,
+	BuiltinModelPanelRef,
+	BuiltinModelPanelRuntime,
 	// Context
 	CompactOptions,
 	// Events - Agent

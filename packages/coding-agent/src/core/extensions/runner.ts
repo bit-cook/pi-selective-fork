@@ -16,6 +16,10 @@ import type {
 	BeforeAgentStartEventResult,
 	BeforeProviderHeadersEvent,
 	BeforeProviderRequestEvent,
+	BuiltinModelPanelAdapter,
+	BuiltinModelPanelCycleRequest,
+	BuiltinModelPanelOpenRequest,
+	BuiltinModelPanelRuntime,
 	CompactOptions,
 	ContextEvent,
 	ContextEventResult,
@@ -292,6 +296,7 @@ export class ExtensionRunner {
 	private shortcutDiagnostics: ResourceDiagnostic[] = [];
 	private commandDiagnostics: ResourceDiagnostic[] = [];
 	private staleMessage: string | undefined;
+	private modelPanelInvocations = new Set<AbortController>();
 
 	constructor(
 		extensions: Extension[],
@@ -306,6 +311,7 @@ export class ExtensionRunner {
 		this.cwd = cwd;
 		this.sessionManager = sessionManager;
 		this.modelRegistry = modelRegistry;
+		this.getBuiltinModelPanel();
 	}
 
 	bindCore(
@@ -443,6 +449,48 @@ export class ExtensionRunner {
 		return this.extensions.map((e) => e.path);
 	}
 
+	getBuiltinModelPanel(): BuiltinModelPanelAdapter | undefined {
+		const owners = this.extensions.filter((extension) => extension.builtinModelPanel);
+		if (owners.length > 1) {
+			throw new Error(
+				`Built-in model panel adapter conflict: ${owners.map((extension) => extension.path).join(", ")}`,
+			);
+		}
+		return owners[0]?.builtinModelPanel;
+	}
+
+	async invokeBuiltinModelPanelOpen(
+		request: Omit<BuiltinModelPanelOpenRequest, "signal">,
+		runtime: BuiltinModelPanelRuntime,
+	): Promise<boolean> {
+		const adapter = this.getBuiltinModelPanel();
+		if (!adapter) return false;
+		const controller = new AbortController();
+		this.modelPanelInvocations.add(controller);
+		try {
+			await adapter.open({ ...request, signal: controller.signal }, runtime);
+			return true;
+		} finally {
+			this.modelPanelInvocations.delete(controller);
+		}
+	}
+
+	async invokeBuiltinModelPanelCycle(
+		request: Omit<BuiltinModelPanelCycleRequest, "signal">,
+		runtime: BuiltinModelPanelRuntime,
+	): Promise<boolean> {
+		const adapter = this.getBuiltinModelPanel();
+		if (!adapter) return false;
+		const controller = new AbortController();
+		this.modelPanelInvocations.add(controller);
+		try {
+			await adapter.cycle({ ...request, signal: controller.signal }, runtime);
+			return true;
+		} finally {
+			this.modelPanelInvocations.delete(controller);
+		}
+	}
+
 	/** Get all registered tools from all extensions (first registration per name wins). */
 	getAllRegisteredTools(): RegisteredTool[] {
 		const toolsByName = new Map<string, RegisteredTool>();
@@ -539,6 +587,8 @@ export class ExtensionRunner {
 	invalidate(
 		message = "This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
 	): void {
+		for (const controller of this.modelPanelInvocations) controller.abort();
+		this.modelPanelInvocations.clear();
 		if (!this.staleMessage) {
 			this.staleMessage = message;
 			this.runtime.invalidate(message);
