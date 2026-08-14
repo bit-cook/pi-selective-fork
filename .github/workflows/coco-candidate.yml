@@ -37,8 +37,8 @@ jobs:
       - run: test "$(node --version)" = "v22.19.0"
       - run: printf 'CANDIDATE_COMMIT=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - run: npm ci --ignore-scripts
-      - run: npm run build
       - run: npm run check
+      - run: npm run build
       - run: mkdir candidate
       - run: npm run candidate:pack -- --tag "$CANDIDATE_TAG" --out candidate
       - name: Verify empty-cache offline install and identity
