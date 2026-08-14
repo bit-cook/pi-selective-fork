@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, pi-candidate]
     timeout-minutes: 30
     env:
       CANDIDATE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -29,10 +29,12 @@ jobs:
         with:
           ref: ${{ env.CANDIDATE_TAG }}
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: 22.19.0
-          cache: npm
+      - name: Select pinned self-hosted Node
+        run: |
+          node_dir="$RUNNER_TOOL_CACHE/node/22.19.0/x64/bin"
+          test -x "$node_dir/node"
+          printf '%s\n' "$node_dir" >> "$GITHUB_PATH"
+      - run: test "$(node --version)" = "v22.19.0"
       - run: printf 'CANDIDATE_COMMIT=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - run: npm ci --ignore-scripts
       - run: npm run build
