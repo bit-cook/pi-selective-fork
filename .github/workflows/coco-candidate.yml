@@ -1,0 +1,62 @@
+name: CoCo Candidate
+
+on:
+  push:
+    tags:
+      - "coco-v*-coco.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Candidate tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coco-candidate-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CANDIDATE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.CANDIDATE_TAG }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - run: printf 'CANDIDATE_COMMIT=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm run check
+      - run: mkdir candidate
+      - run: npm run candidate:pack -- --tag "$CANDIDATE_TAG" --out candidate
+      - name: Verify empty-cache offline install and identity
+        run: |
+          set -euo pipefail
+          artifacts=(candidate/*.tgz)
+          test "${#artifacts[@]}" -eq 1
+          artifact="${artifacts[0]}"
+          test -f "$artifact"
+          cache="$(mktemp -d)"
+          consumer="$(mktemp -d)"
+          trap 'rm -rf "$cache" "$consumer"' EXIT
+          printf '%s\n' '{"name":"coco-candidate-smoke","private":true,"version":"0.0.0"}' > "$consumer/package.json"
+          npm install "$GITHUB_WORKSPACE/$artifact" --prefix "$consumer" --ignore-scripts --no-audit --no-fund --offline --package-lock=false --cache "$cache"
+          node -e 'const p=require(process.argv[1]);if(p.cocoCandidate?.sourceTag!==process.env.CANDIDATE_TAG||p.cocoCandidate?.sourceCommit!==process.env.CANDIDATE_COMMIT||!p.bundledDependencies?.length)process.exit(1)' "$consumer/node_modules/@earendil-works/pi-coding-agent/package.json"
+          node "$consumer/node_modules/@earendil-works/pi-coding-agent/dist/cli.js" --version
+          sha256sum "$artifact" > "$artifact.sha256"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ env.CANDIDATE_TAG }}
+          path: candidate/
+          if-no-files-found: error
+          retention-days: 30
