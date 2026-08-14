@@ -37,8 +37,16 @@ jobs:
       - run: test "$(node --version)" = "v22.19.0"
       - run: printf 'CANDIDATE_COMMIT=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - run: npm ci --ignore-scripts
-      - run: npm run build:offline
-      - run: npm run check
+      - run: npx biome check --error-on-warnings .
+      - run: npm run check:pinned-deps
+      - run: npm run check:ts-imports
+      - run: npm run check:shrinkwrap
+      - run: npm run check:install-lock:coding-agent
+      - run: npm run hydrate:model-data
+      - run: npm run build
+      - name: Test model panel source changes
+        working-directory: packages/coding-agent
+        run: node ../../node_modules/vitest/dist/cli.js --run test/extensions-runner.test.ts test/interactive-mode-model-panel-host.test.ts test/model-runtime-visible.test.ts
       - run: mkdir candidate
       - run: npm run candidate:pack -- --tag "$CANDIDATE_TAG" --out candidate
       - name: Verify empty-cache offline install and identity
