@@ -5,6 +5,7 @@
 ### Added
 
 - Added atomic built-in model-panel extension ownership with a restricted runtime facade and fallback-preserving command and keybinding routing.
+- Added provider request correlation IDs across payload, response, and terminal lifecycle extension events ([#8380](https://github.com/earendil-works/pi/issues/8380)).
 
 ## [0.82.1] - 2026-07-25
 

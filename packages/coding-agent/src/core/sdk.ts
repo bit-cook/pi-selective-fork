@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { Agent, type AgentMessage, setDefaultStreamFn, type ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { clampThinkingLevel, type Message, type Model, streamSimple } from "@earendil-works/pi-ai/compat";
@@ -300,6 +301,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		},
 		convertToLlm: convertToLlmWithBlockImages,
 		streamFn: async (model, context, options) => {
+			const requestId = randomUUID();
+			const attempt = 1;
 			const providerRetrySettings = settingsManager.getProviderRetrySettings();
 			const httpIdleTimeoutMs = settingsManager.getHttpIdleTimeoutMs();
 			// SDKs treat timeout=0 as 0ms (immediate timeout), not "no timeout".
@@ -309,12 +312,28 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			const websocketConnectTimeoutMs =
 				options?.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs();
 			const headerRunner = extensionRunnerRef.current;
-			return modelRuntime.streamSimple(model, context, {
+			const stream = modelRuntime.streamSimple(model, context, {
 				...options,
 				timeoutMs,
 				websocketConnectTimeoutMs,
 				maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
 				maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
+				onPayload: async (payload) => {
+					const runner = extensionRunnerRef.current;
+					if (!runner?.hasHandlers("before_provider_request")) return payload;
+					return runner.emitBeforeProviderRequest(payload, requestId, attempt);
+				},
+				onResponse: async (response) => {
+					const runner = extensionRunnerRef.current;
+					if (!runner?.hasHandlers("after_provider_response")) return;
+					await runner.emit({
+						type: "after_provider_response",
+						status: response.status,
+						headers: response.headers,
+						requestId,
+						attempt,
+					});
+				},
 				transformHeaders: async (requestHeaders) => {
 					const headers = mergeProviderAttributionHeaders(
 						model,
@@ -327,25 +346,21 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 						: (headers ?? {});
 				},
 			});
-		},
-		onPayload: async (payload, _model) => {
-			const runner = extensionRunnerRef.current;
-			if (!runner?.hasHandlers("before_provider_request")) {
-				return payload;
-			}
-			return runner.emitBeforeProviderRequest(payload);
-		},
-		onResponse: async (response, _model) => {
-			const runner = extensionRunnerRef.current;
-			if (!runner?.hasHandlers("after_provider_response")) {
-				return;
-			}
-			await runner.emit({
-				type: "after_provider_response",
-				status: response.status,
-				headers: response.headers,
+			void stream.result().then(async (message) => {
+				const runner = extensionRunnerRef.current;
+				if (!runner?.hasHandlers("provider_request_end")) return;
+				await runner.emit({
+					type: "provider_request_end",
+					requestId,
+					attempt,
+					outcome:
+						message.stopReason === "aborted" ? "aborted" : message.stopReason === "error" ? "error" : "done",
+				});
 			});
+			return stream;
 		},
+		onPayload: undefined,
+		onResponse: undefined,
 		sessionId: sessionManager.getSessionId(),
 		transformContext: async (messages) => {
 			const runner = extensionRunnerRef.current;
