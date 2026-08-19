@@ -45,6 +45,9 @@ jobs:
       - run: npm run check:install-lock:coding-agent
       - run: npm run hydrate:model-data
       - run: npm run build
+      - name: Test provider request correlation
+        working-directory: packages/coding-agent
+        run: node ../../node_modules/vitest/dist/cli.js --run test/sdk-stream-options.test.ts
       - name: Test model panel source changes
         working-directory: packages/coding-agent
         run: node ../../node_modules/vitest/dist/cli.js --run test/extensions-runner.test.ts test/interactive-mode-model-panel-host.test.ts test/model-runtime-visible.test.ts

@@ -194,4 +194,38 @@ describe("createAgentSession stream options", () => {
 		});
 		expect(options).not.toHaveProperty("transformHeaders");
 	});
+
+	it("correlates provider payload, response, and terminal lifecycle events", async () => {
+		const key = "__piProviderLifecycleEvents";
+		const options = await captureStreamOptions(
+			"openai-completions",
+			{},
+			{},
+			`const eventStore = globalThis as unknown as Record<string, Array<Record<string, unknown>>>;
+			eventStore.${key} = [];
+			export default function (pi) {
+				pi.on("before_provider_request", (event) => eventStore.${key}.push({ type: event.type, requestId: event.requestId, attempt: event.attempt }));
+				pi.on("after_provider_response", (event) => eventStore.${key}.push({ type: event.type, requestId: event.requestId, attempt: event.attempt }));
+				pi.on("provider_request_end", (event) => eventStore.${key}.push({ type: event.type, requestId: event.requestId, attempt: event.attempt, outcome: event.outcome }));
+			}`,
+		);
+		await options?.onPayload?.({}, createModel("openai-completions"));
+		await options?.onResponse?.({ status: 200, headers: {} }, createModel("openai-completions"));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const events = (globalThis as Record<string, unknown>)[key] as Array<{
+			type: string;
+			requestId: string;
+			attempt: number;
+			outcome?: string;
+		}>;
+		expect(events.map(({ type }) => type).sort()).toEqual([
+			"after_provider_response",
+			"before_provider_request",
+			"provider_request_end",
+		]);
+		expect(new Set(events.map(({ requestId }) => requestId)).size).toBe(1);
+		expect(events.every(({ attempt }) => attempt === 1)).toBe(true);
+		expect(events.find(({ type }) => type === "provider_request_end")?.outcome).toBe("done");
+		delete (globalThis as Record<string, unknown>)[key];
+	});
 });
