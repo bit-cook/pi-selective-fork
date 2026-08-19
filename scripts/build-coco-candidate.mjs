@@ -26,6 +26,16 @@ const sourceCommit = (await exec("git", ["rev-parse", "HEAD"], { cwd: repoRoot }
 const baseCommit = (await exec("git", ["rev-list", "-n", "1", "v0.82.1"], { cwd: repoRoot })).stdout.trim();
 const temporary = await mkdtemp(join(tmpdir(), "pi-coco-candidate-"));
 
+async function installedPackages(nodeModules) {
+	const packages = [];
+	for (const entry of await readdir(nodeModules, { withFileTypes: true })) {
+		if (!entry.isDirectory() || entry.name === ".bin") continue;
+		if (!entry.name.startsWith("@")) packages.push(entry.name);
+		else for (const child of await readdir(join(nodeModules, entry.name), { withFileTypes: true })) if (child.isDirectory()) packages.push(`${entry.name}/${child.name}`);
+	}
+	return packages.sort();
+}
+
 try {
 	const baseOutput = join(temporary, "base");
 	const consumer = join(temporary, "consumer");
@@ -40,7 +50,7 @@ try {
 	const manifestPath = join(stagedPackage, "package.json");
 	const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 	manifest.cocoCandidate = { baseCommit, baseTag: "v0.82.1", repository: "https://github.com/bit-cook/pi-selective-fork", schemaVersion: 1, sourceCommit, sourceTag };
-	manifest.bundledDependencies = Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies }).sort();
+	manifest.bundledDependencies = await installedPackages(join(consumer, "node_modules"));
 	await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 	await cp(join(consumer, "node_modules"), join(stagedPackage, "node_modules"), { filter: (path) => !path.endsWith("/@earendil-works/pi-coding-agent"), recursive: true, verbatimSymlinks: false });
 	const packed = JSON.parse((await exec("npm", ["pack", "--json", "--pack-destination", outputDirectory], { cwd: stagedPackage, maxBuffer: 64 * 1024 * 1024 })).stdout)[0];
