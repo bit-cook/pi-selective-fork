@@ -670,6 +670,8 @@ export interface ContextEvent {
 export interface BeforeProviderRequestEvent {
 	type: "before_provider_request";
 	payload: unknown;
+	requestId: string;
+	attempt: number;
 }
 
 /**
@@ -687,6 +689,16 @@ export interface AfterProviderResponseEvent {
 	type: "after_provider_response";
 	status: number;
 	headers: Record<string, string>;
+	requestId: string;
+	attempt: number;
+}
+
+/** Fired when a provider stream reaches a terminal message. */
+export interface ProviderRequestEndEvent {
+	type: "provider_request_end";
+	requestId: string;
+	attempt: number;
+	outcome: "done" | "error" | "aborted";
 }
 
 /** Fired after user submits prompt but before agent loop. */
@@ -1033,6 +1045,7 @@ export type ExtensionEvent =
 	| BeforeProviderRequestEvent
 	| BeforeProviderHeadersEvent
 	| AfterProviderResponseEvent
+	| ProviderRequestEndEvent
 	| BeforeAgentStartEvent
 	| AgentStartEvent
 	| AgentEndEvent
@@ -1205,6 +1218,7 @@ export interface ExtensionAPI {
 	): void;
 	on(event: "before_provider_headers", handler: ExtensionHandler<BeforeProviderHeadersEvent>): void;
 	on(event: "after_provider_response", handler: ExtensionHandler<AfterProviderResponseEvent>): void;
+	on(event: "provider_request_end", handler: ExtensionHandler<ProviderRequestEndEvent>): void;
 	on(event: "before_agent_start", handler: ExtensionHandler<BeforeAgentStartEvent, BeforeAgentStartEventResult>): void;
 	on(event: "agent_start", handler: ExtensionHandler<AgentStartEvent>): void;
 	on(event: "agent_end", handler: ExtensionHandler<AgentEndEvent>): void;

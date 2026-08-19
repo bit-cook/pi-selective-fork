@@ -140,6 +140,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		});
 	}
 
+	const requestId = "faux-provider-request";
 	const agent = new Agent({
 		getApiKey: () => (withConfiguredAuth ? "faux-key" : undefined),
 		streamFn: streamSimple,
@@ -154,7 +155,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 			if (!runner?.hasHandlers("before_provider_request")) {
 				return payload;
 			}
-			return runner.emitBeforeProviderRequest(payload);
+			return runner.emitBeforeProviderRequest(payload, requestId, 1);
 		},
 		onResponse: async (response) => {
 			const runner = extensionRunnerRef.current;
@@ -165,6 +166,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 				type: "after_provider_response",
 				status: response.status,
 				headers: response.headers,
+				requestId,
+				attempt: 1,
 			});
 		},
 		transformContext: async (messages: AgentMessage[]) => {
