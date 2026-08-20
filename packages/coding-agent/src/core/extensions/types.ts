@@ -682,6 +682,8 @@ export interface BeforeProviderRequestEvent {
 export interface BeforeProviderHeadersEvent {
 	type: "before_provider_headers";
 	headers: ProviderHeaders;
+	requestId: string;
+	attempt: number;
 }
 
 /** Fired after a provider response is received and before the response stream is consumed. */

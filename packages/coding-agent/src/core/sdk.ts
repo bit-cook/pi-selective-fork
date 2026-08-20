@@ -342,7 +342,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 						requestHeaders,
 					);
 					return headerRunner?.hasHandlers("before_provider_headers")
-						? headerRunner.emitBeforeProviderHeaders(headers ?? {})
+						? headerRunner.emitBeforeProviderHeaders(headers ?? {}, requestId, attempt)
 						: (headers ?? {});
 				},
 			});

@@ -1036,7 +1036,11 @@ export class ExtensionRunner {
 		return currentPayload;
 	}
 
-	async emitBeforeProviderHeaders(headers: ProviderHeaders): Promise<ProviderHeaders> {
+	async emitBeforeProviderHeaders(
+		headers: ProviderHeaders,
+		requestId: string,
+		attempt: number,
+	): Promise<ProviderHeaders> {
 		const ctx = this.createContext();
 
 		for (const ext of this.extensions) {
@@ -1049,6 +1053,8 @@ export class ExtensionRunner {
 					const event: BeforeProviderHeadersEvent = {
 						type: "before_provider_headers",
 						headers,
+						requestId,
+						attempt,
 					};
 					await handler(event, ctx);
 				} catch (err) {

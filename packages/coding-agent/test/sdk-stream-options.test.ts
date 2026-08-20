@@ -205,6 +205,7 @@ describe("createAgentSession stream options", () => {
 			eventStore.${key} = [];
 			export default function (pi) {
 				pi.on("before_provider_request", (event) => eventStore.${key}.push({ type: event.type, requestId: event.requestId, attempt: event.attempt }));
+				pi.on("before_provider_headers", (event) => eventStore.${key}.push({ type: event.type, requestId: event.requestId, attempt: event.attempt }));
 				pi.on("after_provider_response", (event) => eventStore.${key}.push({ type: event.type, requestId: event.requestId, attempt: event.attempt }));
 				pi.on("provider_request_end", (event) => eventStore.${key}.push({ type: event.type, requestId: event.requestId, attempt: event.attempt, outcome: event.outcome }));
 			}`,
@@ -220,6 +221,7 @@ describe("createAgentSession stream options", () => {
 		}>;
 		expect(events.map(({ type }) => type).sort()).toEqual([
 			"after_provider_response",
+			"before_provider_headers",
 			"before_provider_request",
 			"provider_request_end",
 		]);
